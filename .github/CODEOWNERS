@@ -2,8 +2,8 @@
 * @alperbasak
 
 # backend owners:
-/src/backend/ @alper-backend
-/tests/backend/ @alper-backend
+/src/backend/ @alper-test1
+/tests/backend/ @alper-test1
 
 # frontend owners:
 /src/frontend/ @alper-frontend
