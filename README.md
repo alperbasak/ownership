@@ -1,1 +1,1 @@
-# CODEOWNERS Auto Approve GitHub Action update
+# CODEOWNERS Auto Approve GitHub Action
