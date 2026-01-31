@@ -2,9 +2,9 @@
 * @alperbasak
 
 # backend owners:
-/src/backend/ @alper-test1
-/tests/backend/ @alper-test1
+/src/backend/ @alper-test1 @token3-imec
+/tests/backend/ @alper-test1 @token3-imec
 
 # frontend owners:
-/src/frontend/ @alper-frontend
-/tests/frontend/ @alper-frontend
+/src/frontend/ @token3-imec
+/tests/frontend/ @token3-imec
