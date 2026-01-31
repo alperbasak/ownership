@@ -1,0 +1,10 @@
+# default owners:
+* @alperbasak
+
+# backend owners:
+/src/backend/ @alper-backend
+/tests/backend/ @alper-backend
+
+# frontend owners:
+/src/frontend/ @alper-frontend
+/tests/frontend/ @alper-frontend
