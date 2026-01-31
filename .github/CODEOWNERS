@@ -2,8 +2,8 @@
 * @alperbasak
 
 # backend owners:
-/src/backend/ @alper-test1 @token3-imec
-/tests/backend/ @alper-test1 @token3-imec
+/src/backend/ @alper-test1 @token3-imec @github-actions[bot]
+/tests/backend/ @alper-test1 @token3-imec @github-actions[bot]
 
 # frontend owners:
 /src/frontend/ @token3-imec
