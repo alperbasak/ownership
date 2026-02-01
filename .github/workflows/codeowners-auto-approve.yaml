@@ -54,19 +54,46 @@ jobs:
             // ============================================
             // 2. GET CHANGED FILES
             // ============================================
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-              per_page: 100
-            });
+            // Fetch ALL changed files with pagination (GitHub API limit is 100 per page)
+            const allFiles = [];
+            let page = 1;
+            let hasMore = true;
             
-            const changedFiles = files.map(f => f.filename);
-            console.log(`Files changed: ${changedFiles.length}`);
+            console.log('Fetching changed files...');
+            while (hasMore) {
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+                per_page: 100,
+                page: page
+              });
+              
+              allFiles.push(...files);
+              console.log(`  Page ${page}: ${files.length} files`);
+              
+              // If we got less than 100 files, we've reached the end
+              hasMore = files.length === 100;
+              page++;
+              
+              // Safety check: GitHub's API has a limit of 3000 files per PR
+              if (allFiles.length >= 3000) {
+                console.log('⚠️  Warning: PR has 3000+ files (GitHub API limit reached)');
+                break;
+              }
+            }
+            
+            const changedFiles = allFiles.map(f => f.filename);
+            console.log(`Total files changed: ${changedFiles.length}`);
             
             if (changedFiles.length === 0) {
               console.log('No files to check');
               return;
+            }
+            
+            // Warn if PR is very large
+            if (changedFiles.length > 300) {
+              console.log(`⚠️  Large PR detected: ${changedFiles.length} files changed`);
             }
             
             // ============================================
@@ -293,13 +320,42 @@ jobs:
               if (botAuthorized && botApprovalId) {
                 console.log('🔄 Dismissing bot\'s previous approval (conditions no longer met)...');
                 
+                // Build a concise dismissal message (GitHub has comment size limits)
                 let dismissMessage = 'Approval requirements no longer met';
+                
                 if (filesNeedingApproval.length > 0) {
-                  const needsList = filesNeedingApproval.map(({ file, owners }) => {
+                  // Group files by required owners to make message concise
+                  const ownerGroups = new Map();
+                  
+                  for (const { file, owners } of filesNeedingApproval) {
                     const nonBotOwners = owners.filter(o => o !== `@${bot.login}` && o !== `@${author}`);
-                    return `${file} needs approval from: ${nonBotOwners.join(', ')}`;
-                  }).join('; ');
-                  dismissMessage = `Waiting for required approvals: ${needsList}`;
+                    const ownersKey = nonBotOwners.sort().join(', ');
+                    
+                    if (!ownerGroups.has(ownersKey)) {
+                      ownerGroups.set(ownersKey, []);
+                    }
+                    ownerGroups.get(ownersKey).push(file);
+                  }
+                  
+                  // Build message with file count limits to avoid huge messages
+                  const parts = [];
+                  for (const [owners, files] of ownerGroups) {
+                    if (files.length <= 3) {
+                      // Show all files if 3 or fewer
+                      parts.push(`${files.join(', ')} need${files.length === 1 ? 's' : ''} approval from: ${owners}`);
+                    } else {
+                      // Summarize if many files
+                      parts.push(`${files.length} files need approval from: ${owners} (e.g., ${files.slice(0, 2).join(', ')}, ...)`);
+                    }
+                  }
+                  
+                  // Limit message length (GitHub comment limit is ~65536 chars, be safe at 1000)
+                  const fullMessage = `Waiting for required approvals:\n${parts.join('\n')}`;
+                  if (fullMessage.length > 1000) {
+                    dismissMessage = `Waiting for required approvals: ${filesNeedingApproval.length} file(s) need review. See workflow logs for details.`;
+                  } else {
+                    dismissMessage = fullMessage;
+                  }
                 }
                 
                 try {
@@ -340,13 +396,22 @@ jobs:
             console.log('✅ All conditions met, approving...');
             console.log(`   Reason: ${author} owns all changed files OR required approvals exist`);
             
+            // Build approval message with context about PR size
+            let approvalBody = '✅ Auto-approved: All CODEOWNERS requirements are met';
+            if (changedFiles.length > 100) {
+              approvalBody += `\n\n📊 Large PR: ${changedFiles.length} files changed`;
+            }
+            if (changedFiles.length > 1000) {
+              approvalBody += ' - Consider splitting into smaller PRs for easier review';
+            }
+            
             try {
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
                 event: 'APPROVE',
-                body: '✅ Auto-approved: All CODEOWNERS requirements are met'
+                body: approvalBody
               });
               console.log('✅ PR approved');
             } catch (error) {
