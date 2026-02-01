@@ -3,6 +3,8 @@ name: CODEOWNERS Auto Approve
 on:
   pull_request:
     types: [ opened, synchronize, reopened ]
+  pull_request_review:
+    types: [ submitted ]
 
 jobs:
   auto-approve:
@@ -68,7 +70,31 @@ jobs:
             console.log(`CODEOWNERS rules: ${rules.length}`);
             
             // ============================================
-            // 4. HELPER FUNCTIONS
+            // 4. GET EXISTING APPROVALS
+            // ============================================
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            
+            // Get latest review state per reviewer (last review wins)
+            const approvers = new Set();
+            const reviewsByUser = {};
+            
+            for (const review of reviews) {
+              reviewsByUser[review.user.login] = review;
+            }
+            
+            for (const [user, review] of Object.entries(reviewsByUser)) {
+              if (review.state === 'APPROVED') {
+                approvers.add(user);
+                console.log(`Existing approval from: @${user}`);
+              }
+            }
+            
+            // ============================================
+            // 5. HELPER FUNCTIONS
             // ============================================
             
             // Check if username is in a GitHub team
@@ -136,12 +162,42 @@ jobs:
               return { owners, pattern };
             }
             
+            // Check if any owner from the list has approved (excluding bot and author)
+            async function hasRequiredApproval(owners) {
+              for (const owner of owners) {
+                // Skip bot itself
+                if (owner === `@${bot.login}`) continue;
+            
+                // Skip author (they can't approve their own PR)
+                if (owner === `@${author}`) continue;
+            
+                // Check direct user approval
+                if (owner.startsWith('@')) {
+                  const username = owner.slice(1);
+                  if (approvers.has(username)) {
+                    return true;
+                  }
+                }
+            
+                // Check team member approval
+                if (owner.includes('/')) {
+                  for (const approver of approvers) {
+                    if (await isInTeam(approver, owner)) {
+                      return true;
+                    }
+                  }
+                }
+              }
+              return false;
+            }
+            
             // ============================================
-            // 5. CHECK EACH FILE
+            // 6. CHECK EACH FILE
             // ============================================
             console.log('\n--- Checking files ---');
             
             let shouldApprove = true;
+            const filesNeedingApproval = [];
             
             for (const file of changedFiles) {
               const { owners, pattern } = findOwners(file);
@@ -168,20 +224,34 @@ jobs:
                 break;
               }
             
-              // Author must own all files
+              // Check if file needs approval from others
               if (!authorIsOwner) {
-                console.log(`  ⏸️  Author doesn't own this file`);
-                shouldApprove = false;
+                const hasApproval = await hasRequiredApproval(owners);
+                console.log(`  Author doesn't own this file`);
+                console.log(`  Has required approval: ${hasApproval}`);
+            
+                if (!hasApproval) {
+                  filesNeedingApproval.push({ file, pattern, owners });
+                  shouldApprove = false;
+                }
               }
             }
             
             // ============================================
-            // 6. APPROVE IF CONDITIONS MET
+            // 7. APPROVE IF CONDITIONS MET
             // ============================================
             console.log('\n--- Decision ---');
             
             if (!shouldApprove) {
-              console.log('❌ Not auto-approving');
+              if (filesNeedingApproval.length > 0) {
+                console.log('❌ Waiting for required approvals:');
+                filesNeedingApproval.forEach(({ file, pattern, owners }) => {
+                  const nonBotOwners = owners.filter(o => o !== `@${bot.login}` && o !== `@${author}`);
+                  console.log(`  ${file} (${pattern}) needs: ${nonBotOwners.join(', ')}`);
+                });
+              } else {
+                console.log('❌ Not auto-approving');
+              }
               return;
             }
             
