@@ -36,11 +36,18 @@ jobs:
             if (context.eventName === 'pull_request_review') {
               const reviewer = context.payload.review.user.login;
               const action = context.payload.action;
+              const reviewState = context.payload.review.state;
               console.log(`Triggered by ${action} from: @${reviewer}`);
+              console.log(`Review state: ${reviewState}`);
             
               if (reviewer === bot.login) {
                 console.log('⏭️  Skipping - triggered by bot itself');
                 return;
+              }
+              
+              // Log explicitly when handling a dismissal
+              if (action === 'dismissed') {
+                console.log(`⚠️  Dismissal detected from @${reviewer} - will re-evaluate all approvals`);
               }
             }
             
@@ -96,6 +103,8 @@ jobs:
             const reviewsByUser = {};
             let botApprovalId = null;
             
+            console.log(`Total reviews: ${reviews.length}`);
+            
             for (const review of reviews) {
               // Only keep the latest review per user
               if (!reviewsByUser[review.user.login] || review.id > reviewsByUser[review.user.login].id) {
@@ -103,12 +112,15 @@ jobs:
               }
             }
             
+            console.log(`\n--- Review States ---`);
             for (const [user, review] of Object.entries(reviewsByUser)) {
               // Track bot's own approval
               if (user === bot.login) {
                 if (review.state === 'APPROVED') {
                   botApprovalId = review.id;
                   console.log(`Bot has existing approval (id: ${botApprovalId})`);
+                } else {
+                  console.log(`Bot review state: ${review.state} (no active approval)`);
                 }
                 continue;
               }
@@ -116,11 +128,13 @@ jobs:
               // Only count if state is APPROVED (not DISMISSED, CHANGES_REQUESTED, etc.)
               if (review.state === 'APPROVED') {
                 approvers.add(user);
-                console.log(`Existing approval from: @${user}`);
+                console.log(`✅ @${user}: APPROVED`);
               } else {
-                console.log(`@${user} review state: ${review.state}`);
+                console.log(`❌ @${user}: ${review.state}`);
               }
             }
+            
+            console.log(`\nActive approvers (excluding bot): ${Array.from(approvers).map(u => '@' + u).join(', ') || 'none'}`);
             
             // ============================================
             // 5. HELPER FUNCTIONS
@@ -278,16 +292,35 @@ jobs:
               // (if bot is not authorized, it shouldn't have approved in the first place)
               if (botAuthorized && botApprovalId) {
                 console.log('🔄 Dismissing bot\'s previous approval (conditions no longer met)...');
+                
+                let dismissMessage = 'Approval requirements no longer met';
+                if (filesNeedingApproval.length > 0) {
+                  const needsList = filesNeedingApproval.map(({ file, owners }) => {
+                    const nonBotOwners = owners.filter(o => o !== `@${bot.login}` && o !== `@${author}`);
+                    return `${file} needs approval from: ${nonBotOwners.join(', ')}`;
+                  }).join('; ');
+                  dismissMessage = `Waiting for required approvals: ${needsList}`;
+                }
+                
                 try {
                   await github.rest.pulls.dismissReview({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     pull_number: prNumber,
                     review_id: botApprovalId,
+                    message: dismissMessage
                   });
                   console.log('✅ Bot approval dismissed');
+                  console.log(`   Message: ${dismissMessage}`);
                 } catch (error) {
                   console.log(`⚠️  Could not dismiss approval: ${error.message}`);
+                }
+              } else {
+                if (!botAuthorized) {
+                  console.log('⚠️  Bot not authorized to approve - no dismissal needed');
+                }
+                if (!botApprovalId) {
+                  console.log('ℹ️  No existing bot approval to dismiss');
                 }
               }
             
@@ -305,18 +338,20 @@ jobs:
             }
             
             console.log('✅ All conditions met, approving...');
+            console.log(`   Reason: ${author} owns all changed files OR required approvals exist`);
             
             try {
               await github.rest.pulls.createReview({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
-                event: 'APPROVE'
+                event: 'APPROVE',
+                body: '✅ Auto-approved: All CODEOWNERS requirements are met'
               });
               console.log('✅ PR approved');
             } catch (error) {
               if (error.status === 422) {
-                console.log('Already approved or same user');
+                console.log('ℹ️  Already approved or cannot approve (same user as author)');
               } else {
                 throw error;
               }
