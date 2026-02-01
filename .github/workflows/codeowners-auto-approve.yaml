@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [ opened, synchronize, reopened ]
   pull_request_review:
-    types: [ submitted ]
+    types: [ submitted, dismissed ]
 
 jobs:
   auto-approve:
@@ -30,11 +30,13 @@ jobs:
             console.log(`Bot: @${bot.login}`);
             console.log(`Author: @${author}`);
             console.log(`PR: #${prNumber}`);
+            console.log(`Event: ${context.eventName}`);
             
             // Skip if this was triggered by bot's own review
             if (context.eventName === 'pull_request_review') {
               const reviewer = context.payload.review.user.login;
-              console.log(`Triggered by review from: @${reviewer}`);
+              const action = context.payload.action;
+              console.log(`Triggered by ${action} from: @${reviewer}`);
             
               if (reviewer === bot.login) {
                 console.log('⏭️  Skipping - triggered by bot itself');
@@ -94,16 +96,22 @@ jobs:
             const reviewsByUser = {};
             
             for (const review of reviews) {
-              reviewsByUser[review.user.login] = review;
+              // Only keep the latest review per user
+              if (!reviewsByUser[review.user.login] || review.id > reviewsByUser[review.user.login].id) {
+                reviewsByUser[review.user.login] = review;
+              }
             }
             
             for (const [user, review] of Object.entries(reviewsByUser)) {
               // Skip bot's own approvals when checking for required approvals
               if (user === bot.login) continue;
             
+              // Only count if state is APPROVED (not DISMISSED, CHANGES_REQUESTED, etc.)
               if (review.state === 'APPROVED') {
                 approvers.add(user);
                 console.log(`Existing approval from: @${user}`);
+              } else {
+                console.log(`@${user} review state: ${review.state}`);
               }
             }
             
