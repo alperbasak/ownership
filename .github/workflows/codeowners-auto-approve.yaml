@@ -9,6 +9,8 @@ on:
 jobs:
   auto-approve:
     runs-on: ubuntu-latest
+    # Skip if the review was submitted by the bot itself
+    if: github.event_name != 'pull_request_review' || github.event.review.user.login != github.event.repository.owner.login
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +32,17 @@ jobs:
             console.log(`Bot: @${bot.login}`);
             console.log(`Author: @${author}`);
             console.log(`PR: #${prNumber}`);
+            
+            // Skip if this was triggered by bot's own review
+            if (context.eventName === 'pull_request_review') {
+              const reviewer = context.payload.review.user.login;
+              console.log(`Triggered by review from: @${reviewer}`);
+            
+              if (reviewer === bot.login) {
+                console.log('Skipping - triggered by bot itself');
+                return;
+              }
+            }
             
             // ============================================
             // 2. GET CHANGED FILES
@@ -54,7 +67,7 @@ jobs:
             // ============================================
             const codeownersPath = '.github/CODEOWNERS';
             if (!fs.existsSync(codeownersPath)) {
-              console.log('No CODEOWNERS file found');
+              console.log('No CODEOWNERS file not found');
               return;
             }
             
@@ -87,6 +100,9 @@ jobs:
             }
             
             for (const [user, review] of Object.entries(reviewsByUser)) {
+              // Skip bot's own approvals when checking for required approvals
+              if (user === bot.login) continue;
+            
               if (review.state === 'APPROVED') {
                 approvers.add(user);
                 console.log(`Existing approval from: @${user}`);
