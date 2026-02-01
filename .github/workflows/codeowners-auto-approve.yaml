@@ -99,24 +99,33 @@ jobs:
             function matches(file, pattern) {
               if (pattern === '*') return true;
             
-              // Directory pattern: /backend/ matches backend/*
-              if (pattern.endsWith('/')) {
-                const dir = pattern.slice(0, -1);
-                return file.startsWith(dir + '/');
+              // Normalize: remove leading slash from pattern for comparison
+              const normalizedPattern = pattern.startsWith('/') ? pattern.slice(1) : pattern;
+            
+              // Directory pattern: /dir/ or /dir matches dir/*
+              if (normalizedPattern.endsWith('/')) {
+                const dir = normalizedPattern.slice(0, -1);
+                return file.startsWith(dir + '/') || file === dir;
               }
             
-              // Exact or glob pattern
+              // Check if file starts with the pattern (for directory matches)
+              if (file.startsWith(normalizedPattern + '/')) {
+                return true;
+              }
+            
+              // Exact match or glob pattern
               const regex = new RegExp(
-                '^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$'
+                '^' + normalizedPattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$'
               );
-              return regex.test(file) || regex.test('/' + file);
+              return regex.test(file);
             }
             
-            // Find owners for a file (last matching rule wins)
+            // Find owners for a file (LAST matching rule wins - CODEOWNERS behavior)
             function findOwners(file) {
               let owners = null;
               let pattern = null;
             
+              // Iterate through ALL rules, last match wins
               for (const rule of rules) {
                 if (matches(file, rule.pattern)) {
                   owners = rule.owners;
