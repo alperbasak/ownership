@@ -1,8 +1,8 @@
 # default owners:
-* @alperbasak
+* @alperbasak @codeowners-bot
 
 # backend owners:
-/src/backend/ @alper-test1 @token3-imec
+/src/backend/ @alper-test1 @token3-imec @codeowners-bot
 /tests/backend/ @alper-test1 @token3-imec
 
 # frontend owners:
