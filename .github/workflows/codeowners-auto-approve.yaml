@@ -94,6 +94,7 @@ jobs:
             // Get latest review state per reviewer (last review wins)
             const approvers = new Set();
             const reviewsByUser = {};
+            let botApprovalId = null;
             
             for (const review of reviews) {
               // Only keep the latest review per user
@@ -103,8 +104,14 @@ jobs:
             }
             
             for (const [user, review] of Object.entries(reviewsByUser)) {
-              // Skip bot's own approvals when checking for required approvals
-              if (user === bot.login) continue;
+              // Track bot's own approval
+              if (user === bot.login) {
+                if (review.state === 'APPROVED') {
+                  botApprovalId = review.id;
+                  console.log(`Bot has existing approval (id: ${botApprovalId})`);
+                }
+                continue;
+              }
             
               // Only count if state is APPROVED (not DISMISSED, CHANGES_REQUESTED, etc.)
               if (review.state === 'APPROVED') {
@@ -260,7 +267,7 @@ jobs:
             }
             
             // ============================================
-            // 7. APPROVE IF CONDITIONS MET
+            // 7. APPROVE OR DISMISS
             // ============================================
             console.log('\n--- Decision ---');
             
@@ -274,6 +281,23 @@ jobs:
               } else {
                 console.log('❌ Not auto-approving');
               }
+            
+              // Dismiss bot's own approval if it exists
+              if (botApprovalId) {
+                console.log('🔄 Dismissing bot\'s previous approval...');
+                try {
+                  await github.rest.pulls.dismissReview({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: prNumber,
+                    review_id: botApprovalId,
+                  });
+                  console.log('✅ Bot approval dismissed');
+                } catch (error) {
+                  console.log(`⚠️  Could not dismiss approval: ${error.message}`);
+                }
+              }
+            
               return;
             }
             
