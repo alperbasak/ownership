@@ -102,7 +102,7 @@ jobs:
               // Normalize: remove leading slash from pattern for comparison
               const normalizedPattern = pattern.startsWith('/') ? pattern.slice(1) : pattern;
             
-              // Directory pattern: /dir/ or /dir matches dir/*
+              // Directory pattern: /backend/ or /backend matches backend/*
               if (normalizedPattern.endsWith('/')) {
                 const dir = normalizedPattern.slice(0, -1);
                 return file.startsWith(dir + '/') || file === dir;
@@ -192,8 +192,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
-                event: 'APPROVE',
-                body: '✅ Auto-approved: All changes are owned by @' + author
+                event: 'APPROVE'
               });
               console.log('✅ PR approved');
             } catch (error) {
