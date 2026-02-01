@@ -6,5 +6,5 @@
 /tests/backend/ @alper-test1 @token3-imec
 
 # frontend owners:
-/src/frontend/ @token3-imec
+/src/frontend/ @token3-imec @codeowners-bot
 /tests/frontend/ @token3-imec
